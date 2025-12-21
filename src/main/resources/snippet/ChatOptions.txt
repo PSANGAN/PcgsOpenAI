@@ -1,0 +1,649 @@
+package com.example.springai.chatoptions;
+
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.azure.openai.AzureOpenAiChatOptions;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.stereotype.Service;
+import java.util.List;
+import java.util.Map;
+
+/*
+=======================================================================
+WHAT ARE CHATOPTIONS?
+=======================================================================
+
+ChatOptions configure HOW the AI model generates responses. Think of them as
+"knobs and dials" that control the model's behavior:
+
+- How creative vs focused should responses be?
+- How long should responses be?
+- What should the model avoid?
+- Which specific model version to use?
+- Should responses be deterministic or varied?
+
+ChatOptions can be set at THREE levels:
+1. DEFAULT (in ChatModel configuration) - applies to all calls
+2. RUNTIME (in ChatClient call) - overrides defaults for specific requests
+3. PROMPT-LEVEL (embedded in prompts) - most specific
+
+Priority: Prompt-level > Runtime > Default
+*/
+
+// =======================================================================
+// 1. KEY CHATOPTIONS PROPERTIES
+// =======================================================================
+
+@Service
+public class ChatOptionsExamplesService {
+
+    private final ChatClient chatClient;
+    private final ChatModel chatModel;
+
+    public ChatOptionsExamplesService(ChatClient.Builder builder, ChatModel chatModel) {
+        this.chatClient = builder.build();
+        this.chatModel = chatModel;
+    }
+
+    // =======================================================================
+    // PROPERTY 1: TEMPERATURE (0.0 - 2.0)
+    // Controls randomness/creativity
+    // =======================================================================
+
+    public String temperatureExample(String prompt) {
+        /*
+        TEMPERATURE GUIDE:
+        - 0.0-0.3: Deterministic, factual, consistent (code, data extraction)
+        - 0.4-0.7: Balanced (general Q&A, default for most use cases)
+        - 0.8-1.2: Creative, varied (brainstorming, creative writing)
+        - 1.3-2.0: Very random, experimental (avoid in production)
+        */
+
+        // Low temperature - Factual, consistent
+        String factual = chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.0)
+                .build())
+            .call()
+            .content();
+
+        // High temperature - Creative, varied
+        String creative = chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(1.2)
+                .build())
+            .call()
+            .content();
+
+        return String.format("Factual: %s\n\nCreative: %s", factual, creative);
+    }
+
+    // =======================================================================
+    // PROPERTY 2: MAX_TOKENS
+    // Maximum length of the response
+    // =======================================================================
+
+    public String maxTokensExample(String prompt) {
+        /*
+        MAX_TOKENS GUIDE:
+        - Tokens ≈ 0.75 words (rough estimate)
+        - 100 tokens ≈ 75 words (short paragraph)
+        - 500 tokens ≈ 375 words (medium response)
+        - 2000 tokens ≈ 1500 words (long response)
+        - 4000+ tokens: Very long responses/documents
+
+        USE CASES:
+        - Short answers: 50-150 tokens
+        - Explanations: 200-500 tokens
+        - Essays/articles: 1000-2000 tokens
+        - Code generation: 500-1500 tokens
+        */
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withMaxTokens(150) // Limit response length
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // PROPERTY 3: TOP_P (Nucleus Sampling) (0.0 - 1.0)
+    // Alternative to temperature for controlling randomness
+    // =======================================================================
+
+    public String topPExample(String prompt) {
+        /*
+        TOP_P GUIDE:
+        - 0.1: Very focused, only most likely tokens
+        - 0.5: Moderately focused
+        - 0.9: Diverse but reasonable (default)
+        - 1.0: All tokens considered
+
+        NOTE: Don't use both temperature AND top_p together.
+        Choose one method for controlling randomness.
+
+        USE CASES:
+        - 0.1-0.3: Precise tasks (SQL, math, code review)
+        - 0.5-0.7: General purpose
+        - 0.8-1.0: Creative tasks
+        */
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withTopP(0.2) // Very focused responses
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // PROPERTY 4: FREQUENCY_PENALTY (-2.0 to 2.0)
+    // Penalizes repeated tokens based on frequency
+    // =======================================================================
+
+    public String frequencyPenaltyExample(String prompt) {
+        /*
+        FREQUENCY_PENALTY GUIDE:
+        - Negative values: Encourage repetition
+        - 0.0: No penalty (default)
+        - Positive values: Discourage repetition
+
+        USE CASES:
+        - 0.5-1.0: Reduce repetitive content
+        - Good for: Long-form content, creative writing
+        - Avoid for: Technical docs that need precise terminology
+        */
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withFrequencyPenalty(0.7) // Reduce repetition
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // PROPERTY 5: PRESENCE_PENALTY (-2.0 to 2.0)
+    // Penalizes tokens that have already appeared
+    // =======================================================================
+
+    public String presencePenaltyExample(String prompt) {
+        /*
+        PRESENCE_PENALTY GUIDE:
+        - Encourages model to talk about new topics
+        - 0.0: No penalty (default)
+        - Positive values: Encourage topic diversity
+
+        USE CASES:
+        - 0.5-1.0: Encourage diverse content
+        - Good for: Brainstorming, ideation, varied examples
+        - Combine with frequency_penalty for best results
+        */
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withPresencePenalty(0.6)
+                .withFrequencyPenalty(0.6) // Often used together
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // PROPERTY 6: STOP SEQUENCES
+    // Strings that stop generation when encountered
+    // =======================================================================
+
+    public String stopSequencesExample(String prompt) {
+        /*
+        STOP SEQUENCES:
+        - Model stops generating when it encounters these strings
+        - Useful for structured output formats
+
+        USE CASES:
+        - Prevent unwanted continuation
+        - Create structured outputs
+        - Control response boundaries
+        */
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withStop(List.of("END", "\n\n\n", "---")) // Stop at these markers
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // PROPERTY 7: MODEL SELECTION
+    // Choose specific model version
+    // =======================================================================
+
+    public String modelSelectionExample(String prompt) {
+        /*
+        MODEL SELECTION:
+        - Different models have different capabilities and costs
+        - Choose based on task complexity and requirements
+
+        OpenAI Models:
+        - gpt-4-turbo: Most capable, expensive
+        - gpt-4: High capability
+        - gpt-3.5-turbo: Fast, cost-effective
+
+        Anthropic Models:
+        - claude-3-opus: Most capable
+        - claude-3-sonnet: Balanced
+        - claude-3-haiku: Fastest, cheapest
+        */
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withModel("gpt-4-turbo")
+                .build())
+            .call()
+            .content();
+    }
+}
+
+// =======================================================================
+// 2. REAL-WORLD USE CASE EXAMPLES
+// =======================================================================
+
+@Service
+public class ChatOptionsUseCases {
+
+    private final ChatClient chatClient;
+
+    public ChatOptionsUseCases(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    // =======================================================================
+    // USE CASE 1: CODE GENERATION - Precise and Deterministic
+    // =======================================================================
+
+    public String generateCode(String requirement) {
+        return chatClient.prompt()
+            .user("Generate Java code for: " + requirement)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.1)        // Very deterministic
+                .withMaxTokens(1000)         // Reasonable code length
+                .withTopP(0.1)               // Focused output
+                .withStop(List.of("```\n\n")) // Stop after code block
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 2: CREATIVE WRITING - High Creativity
+    // =======================================================================
+
+    public String creativeWriting(String theme) {
+        return chatClient.prompt()
+            .user("Write a creative story about: " + theme)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(1.2)        // High creativity
+                .withMaxTokens(2000)         // Long-form content
+                .withPresencePenalty(0.8)    // Encourage variety
+                .withFrequencyPenalty(0.7)   // Reduce repetition
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 3: DATA EXTRACTION - Extremely Precise
+    // =======================================================================
+
+    public String extractData(String document) {
+        return chatClient.prompt()
+            .user("Extract structured data from: " + document)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.0)        // Zero randomness
+                .withMaxTokens(500)          // Controlled length
+                .withTopP(0.05)              // Extremely focused
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 4: CUSTOMER SERVICE CHATBOT - Balanced
+    // =======================================================================
+
+    public String customerService(String question) {
+        return chatClient.prompt()
+            .user(question)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.7)        // Friendly but consistent
+                .withMaxTokens(300)          // Concise responses
+                .withFrequencyPenalty(0.3)   // Slight variation
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 5: BRAINSTORMING - Maximum Creativity
+    // =======================================================================
+
+    public String brainstorm(String topic) {
+        return chatClient.prompt()
+            .user("Brainstorm ideas for: " + topic)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(1.3)        // Very creative
+                .withMaxTokens(800)          // Multiple ideas
+                .withPresencePenalty(1.0)    // Maximum diversity
+                .withFrequencyPenalty(0.8)   // Avoid repetition
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 6: SUMMARIZATION - Concise and Factual
+    // =======================================================================
+
+    public String summarize(String text) {
+        return chatClient.prompt()
+            .user("Summarize this text: " + text)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.3)        // Factual
+                .withMaxTokens(200)          // Short summary
+                .withTopP(0.2)               // Focused
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 7: TRANSLATION - Deterministic
+    // =======================================================================
+
+    public String translate(String text, String targetLanguage) {
+        return chatClient.prompt()
+            .user(String.format("Translate to %s: %s", targetLanguage, text))
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.0)        // Consistent translations
+                .withMaxTokens(500)          // Match input length
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // USE CASE 8: SQL GENERATION - Ultra Precise
+    // =======================================================================
+
+    public String generateSQL(String requirement) {
+        return chatClient.prompt()
+            .user("Generate SQL query for: " + requirement)
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.0)        // No randomness
+                .withMaxTokens(300)          // Query length
+                .withTopP(0.01)              // Ultra focused
+                .withStop(List.of(";"))      // Stop at query end
+                .build())
+            .call()
+            .content();
+    }
+}
+
+// =======================================================================
+// 3. PROVIDER-SPECIFIC OPTIONS
+// =======================================================================
+
+@Service
+public class ProviderSpecificOptions {
+
+    private final ChatClient chatClient;
+
+    public ProviderSpecificOptions(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    // =======================================================================
+    // OPENAI-SPECIFIC OPTIONS
+    // =======================================================================
+
+    public String openAISpecific(String prompt) {
+        return chatClient.prompt()
+            .user(prompt)
+            .options(OpenAiChatOptions.builder()
+                .withModel("gpt-4-turbo")
+                .withTemperature(0.7)
+                .withMaxTokens(1000)
+                .withTopP(0.9)
+                .withFrequencyPenalty(0.5)
+                .withPresencePenalty(0.5)
+                .withStop(List.of("END"))
+                .withUser("user-123") // Track user for abuse monitoring
+                .withN(1) // Number of completions to generate
+                .withLogitBias(Map.of()) // Modify token likelihoods
+                .withResponseFormat(Map.of("type", "json_object")) // JSON mode
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // ANTHROPIC-SPECIFIC OPTIONS
+    // =======================================================================
+
+    public String anthropicSpecific(String prompt) {
+        return chatClient.prompt()
+            .user(prompt)
+            .options(AnthropicChatOptions.builder()
+                .withModel("claude-3-sonnet-20240229")
+                .withTemperature(0.7)
+                .withMaxTokens(1000)
+                .withTopP(0.9)
+                .withTopK(40) // Anthropic-specific: limit to top K tokens
+                .withStopSequences(List.of("END"))
+                .build())
+            .call()
+            .content();
+    }
+
+    // =======================================================================
+    // AZURE OPENAI-SPECIFIC OPTIONS
+    // =======================================================================
+
+    public String azureOpenAISpecific(String prompt) {
+        return chatClient.prompt()
+            .user(prompt)
+            .options(AzureOpenAiChatOptions.builder()
+                .withDeploymentName("my-gpt-4-deployment") // Azure deployment
+                .withTemperature(0.7)
+                .withMaxTokens(1000)
+                .build())
+            .call()
+            .content();
+    }
+}
+
+// =======================================================================
+// 4. DYNAMIC OPTIONS BASED ON CONTEXT
+// =======================================================================
+
+@Service
+public class DynamicOptionsService {
+
+    private final ChatClient chatClient;
+
+    public DynamicOptionsService(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    public String handleRequest(String prompt, String taskType) {
+        ChatOptions options = determineOptions(taskType);
+
+        return chatClient.prompt()
+            .user(prompt)
+            .options(options)
+            .call()
+            .content();
+    }
+
+    private ChatOptions determineOptions(String taskType) {
+        return switch (taskType.toLowerCase()) {
+            case "code" -> OpenAiChatOptions.builder()
+                .withTemperature(0.1)
+                .withMaxTokens(1000)
+                .build();
+
+            case "creative" -> OpenAiChatOptions.builder()
+                .withTemperature(1.2)
+                .withMaxTokens(2000)
+                .withPresencePenalty(0.8)
+                .build();
+
+            case "factual" -> OpenAiChatOptions.builder()
+                .withTemperature(0.0)
+                .withMaxTokens(500)
+                .build();
+
+            case "chat" -> OpenAiChatOptions.builder()
+                .withTemperature(0.7)
+                .withMaxTokens(300)
+                .build();
+
+            default -> OpenAiChatOptions.builder()
+                .withTemperature(0.7)
+                .withMaxTokens(800)
+                .build();
+        };
+    }
+}
+
+// =======================================================================
+// 5. PRACTICAL CONTROLLER EXAMPLES
+// =======================================================================
+
+@RestController
+@RequestMapping("/api/ai")
+class ChatOptionsController {
+
+    private final ChatClient chatClient;
+
+    public ChatOptionsController(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    @PostMapping("/code")
+    public String generateCode(@RequestBody CodeRequest request) {
+        return chatClient.prompt()
+            .user(request.requirement())
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.1)
+                .withMaxTokens(1500)
+                .build())
+            .call()
+            .content();
+    }
+
+    @PostMapping("/creative")
+    public String creativeContent(@RequestBody CreativeRequest request) {
+        return chatClient.prompt()
+            .user(request.prompt())
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(1.2)
+                .withMaxTokens(2000)
+                .withPresencePenalty(0.8)
+                .withFrequencyPenalty(0.7)
+                .build())
+            .call()
+            .content();
+    }
+
+    @PostMapping("/summarize")
+    public String summarize(@RequestBody SummarizeRequest request) {
+        return chatClient.prompt()
+            .user("Summarize: " + request.text())
+            .options(OpenAiChatOptions.builder()
+                .withTemperature(0.3)
+                .withMaxTokens(200)
+                .build())
+            .call()
+            .content();
+    }
+
+    record CodeRequest(String requirement) {}
+    record CreativeRequest(String prompt) {}
+    record SummarizeRequest(String text) {}
+}
+
+/*
+=======================================================================
+CHATOPTIONS QUICK REFERENCE
+=======================================================================
+
+PROPERTY              | RANGE      | USE CASE
+---------------------|------------|----------------------------------
+temperature          | 0.0 - 2.0  | Control randomness/creativity
+maxTokens           | 1 - 4096+  | Limit response length
+topP                | 0.0 - 1.0  | Alternative to temperature
+frequencyPenalty    | -2.0 - 2.0 | Reduce repetition
+presencePenalty     | -2.0 - 2.0 | Encourage topic diversity
+stop                | strings    | Stop sequences
+model               | string     | Model selection
+
+=======================================================================
+RECOMMENDED SETTINGS BY TASK
+=======================================================================
+
+CODE GENERATION:
+✓ temperature: 0.0-0.1
+✓ topP: 0.1
+✓ maxTokens: 1000-1500
+
+CREATIVE WRITING:
+✓ temperature: 1.0-1.3
+✓ presencePenalty: 0.7-1.0
+✓ frequencyPenalty: 0.6-0.8
+✓ maxTokens: 1500-2500
+
+DATA EXTRACTION:
+✓ temperature: 0.0
+✓ topP: 0.05
+✓ maxTokens: 500
+
+CUSTOMER SERVICE:
+✓ temperature: 0.6-0.8
+✓ maxTokens: 200-400
+✓ frequencyPenalty: 0.3
+
+BRAINSTORMING:
+✓ temperature: 1.2-1.5
+✓ presencePenalty: 0.8-1.0
+✓ maxTokens: 800-1200
+
+=======================================================================
+BEST PRACTICES
+=======================================================================
+
+1. Don't use temperature AND topP together - choose one
+2. Start with defaults, then adjust based on results
+3. Lower temperature for deterministic tasks
+4. Higher temperature for creative tasks
+5. Use maxTokens to control costs
+6. Test different settings for your specific use case
+7. Monitor token usage and adjust accordingly
+8. Use stop sequences for structured output
+9. Consider frequency/presence penalties together
+10. Choose model based on complexity and cost requirements
+
+=======================================================================
+*/

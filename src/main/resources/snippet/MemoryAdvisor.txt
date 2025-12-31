@@ -1,0 +1,431 @@
+/*
+ * SPRING AI CHAT MEMORY COMPONENTS - COMPREHENSIVE GUIDE
+ * ======================================================
+ *
+ * This guide covers key components for managing conversation memory in Spring AI applications.
+ */
+
+// =============================================================================
+// 1. MessageWindowChatMemory
+// =============================================================================
+// Stores chat messages in a sliding window, keeping only the last N messages.
+// Useful for limiting context size and controlling token usage.
+
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.AssistantMessage;
+
+public class MessageWindowExample {
+
+    public void demonstrateMessageWindow() {
+        // Create a memory that keeps only the last 5 messages
+        ChatMemory memory = new MessageWindowChatMemory(5);
+
+        String conversationId = "user-123";
+
+        // Add messages to the conversation
+        memory.add(conversationId, new UserMessage("Hello, how are you?"));
+        memory.add(conversationId, new AssistantMessage("I'm doing well, thank you!"));
+        memory.add(conversationId, new UserMessage("What's the weather like?"));
+        memory.add(conversationId, new AssistantMessage("I don't have real-time weather data."));
+
+        // Retrieve all messages for this conversation
+        List<Message> messages = memory.get(conversationId, 10);
+
+        // When adding the 6th and 7th messages, the first message will be removed
+        memory.add(conversationId, new UserMessage("Tell me a joke"));
+        memory.add(conversationId, new AssistantMessage("Why did the developer quit? No arrays!"));
+
+        // Now only the last 5 messages remain
+        System.out.println("Total messages: " + memory.get(conversationId, 10).size());
+    }
+}
+
+// =============================================================================
+// 2. InMemoryChatMemoryRepository
+// =============================================================================
+// Stores chat messages in application memory (not persistent across restarts).
+// Good for development, testing, or short-lived sessions.
+
+import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class InMemoryChatMemoryConfig {
+
+    @Bean
+    public InMemoryChatMemoryRepository chatMemoryRepository() {
+        return new InMemoryChatMemoryRepository();
+    }
+}
+
+public class InMemoryExample {
+
+    private final InMemoryChatMemoryRepository repository;
+
+    public InMemoryExample(InMemoryChatMemoryRepository repository) {
+        this.repository = repository;
+    }
+
+    public void demonstrateInMemoryStorage() {
+        String conversationId = "chat-001";
+
+        // Create messages
+        List<Message> messages = Arrays.asList(
+            new UserMessage("What is Spring AI?"),
+            new AssistantMessage("Spring AI is a framework for building AI-powered applications.")
+        );
+
+        // Save messages
+        repository.save(conversationId, messages);
+
+        // Retrieve messages
+        List<Message> retrieved = repository.get(conversationId);
+        System.out.println("Retrieved " + retrieved.size() + " messages");
+
+        // Delete conversation
+        repository.delete(conversationId);
+    }
+}
+
+// =============================================================================
+// 3. JdbcChatMemoryRepository
+// =============================================================================
+// Persists chat messages to a relational database using JDBC.
+// Provides durable storage that survives application restarts.
+
+import org.springframework.ai.chat.memory.JdbcChatMemoryRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
+import javax.sql.DataSource;
+
+@Configuration
+public class JdbcChatMemoryConfig {
+
+    @Bean
+    public JdbcChatMemoryRepository jdbcChatMemoryRepository(DataSource dataSource) {
+        // Create repository with custom table name
+        return new JdbcChatMemoryRepository(dataSource, "chat_history");
+    }
+}
+
+// SQL Schema for JdbcChatMemoryRepository
+/*
+CREATE TABLE chat_history (
+    id VARCHAR(255) PRIMARY KEY,
+    conversation_id VARCHAR(255) NOT NULL,
+    message_type VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    metadata TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_conversation_id (conversation_id)
+);
+*/
+
+public class JdbcMemoryExample {
+
+    private final JdbcChatMemoryRepository repository;
+
+    public JdbcMemoryExample(JdbcChatMemoryRepository repository) {
+        this.repository = repository;
+    }
+
+    public void demonstratePersistentStorage() {
+        String conversationId = "persistent-chat-456";
+
+        // Save conversation
+        List<Message> conversation = Arrays.asList(
+            new UserMessage("Remember my name is John"),
+            new AssistantMessage("Nice to meet you, John!"),
+            new UserMessage("What's my name?"),
+            new AssistantMessage("Your name is John.")
+        );
+
+        repository.save(conversationId, conversation);
+
+        // Even after application restart, messages are retrievable
+        List<Message> restored = repository.get(conversationId);
+        System.out.println("Restored " + restored.size() + " messages from database");
+    }
+}
+
+// =============================================================================
+// 4. MessageChatMemoryAdvisor
+// =============================================================================
+// Automatically injects conversation history into chat requests.
+// Manages memory retrieval and storage transparently.
+
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.memory.ChatMemory;
+
+@Service
+public class ChatServiceWithMemory {
+
+    private final ChatClient chatClient;
+
+    public ChatServiceWithMemory(ChatClient.Builder chatClientBuilder,
+                                  ChatMemory chatMemory) {
+
+        // Configure chat client with memory advisor
+        this.chatClient = chatClientBuilder
+            .defaultAdvisors(
+                new MessageChatMemoryAdvisor(chatMemory)
+            )
+            .build();
+    }
+
+    public String chat(String conversationId, String userMessage) {
+        // The advisor automatically:
+        // 1. Retrieves previous messages for this conversation
+        // 2. Adds them to the context
+        // 3. Saves the new user message and AI response
+
+        return chatClient.prompt()
+            .user(userMessage)
+            .advisors(advisor -> advisor
+                .param("conversationId", conversationId)
+            )
+            .call()
+            .content();
+    }
+}
+
+// Complete example with configuration
+@Configuration
+public class ChatMemoryAdvisorConfig {
+
+    @Bean
+    public ChatClient chatClient(ChatClient.Builder builder, ChatMemory chatMemory) {
+        return builder
+            .defaultAdvisors(
+                // Add memory advisor with window of 10 messages
+                new MessageChatMemoryAdvisor(chatMemory, 10)
+            )
+            .build();
+    }
+
+    @Bean
+    public ChatMemory chatMemory() {
+        // Use in-memory storage with 20-message window
+        return new MessageWindowChatMemory(20);
+    }
+}
+
+// =============================================================================
+// 5. PromptChatMemoryAdvisor
+// =============================================================================
+// Similar to MessageChatMemoryAdvisor but allows custom prompt formatting.
+// Gives more control over how conversation history is presented to the AI.
+
+import org.springframework.ai.chat.client.advisor.PromptChatMemoryAdvisor;
+import org.springframework.ai.chat.prompt.PromptTemplate;
+
+@Configuration
+public class PromptChatMemoryConfig {
+
+    @Bean
+    public ChatClient chatClientWithPromptMemory(
+            ChatClient.Builder builder,
+            ChatMemory chatMemory) {
+
+        // Custom template for formatting conversation history
+        String historyTemplate = """
+            Previous conversation:
+            {chat_history}
+
+            Current question: {question}
+
+            Please provide a helpful response considering the conversation history.
+            """;
+
+        return builder
+            .defaultAdvisors(
+                new PromptChatMemoryAdvisor(
+                    chatMemory,
+                    historyTemplate,
+                    10  // Max messages to include
+                )
+            )
+            .build();
+    }
+}
+
+public class PromptMemoryExample {
+
+    private final ChatClient chatClient;
+
+    public PromptMemoryExample(ChatClient chatClient) {
+        this.chatClient = chatClient;
+    }
+
+    public String chatWithCustomFormat(String conversationId, String question) {
+        return chatClient.prompt()
+            .user(question)
+            .advisors(advisor -> advisor
+                .param("conversationId", conversationId)
+            )
+            .call()
+            .content();
+    }
+}
+
+// =============================================================================
+// 6. VectorStoreAdvisor
+// =============================================================================
+// Implements semantic search over conversation history using vector embeddings.
+// Retrieves relevant past messages based on semantic similarity, not just recency.
+
+import org.springframework.ai.chat.client.advisor.VectorStoreChatMemoryAdvisor;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.SimpleVectorStore;
+
+@Configuration
+public class VectorStoreAdvisorConfig {
+
+    @Bean
+    public VectorStore vectorStore() {
+        // In production, use Pinecone, Weaviate, or PgVector
+        return new SimpleVectorStore();
+    }
+
+    @Bean
+    public ChatClient chatClientWithVectorMemory(
+            ChatClient.Builder builder,
+            VectorStore vectorStore) {
+
+        return builder
+            .defaultAdvisors(
+                // Retrieve top 5 semantically relevant messages
+                new VectorStoreChatMemoryAdvisor(vectorStore, 5)
+            )
+            .build();
+    }
+}
+
+public class VectorMemoryExample {
+
+    private final ChatClient chatClient;
+    private final VectorStore vectorStore;
+
+    public VectorMemoryExample(ChatClient chatClient, VectorStore vectorStore) {
+        this.chatClient = chatClient;
+        this.vectorStore = vectorStore;
+    }
+
+    public String semanticChat(String conversationId, String question) {
+        // The VectorStoreAdvisor automatically:
+        // 1. Embeds the user's question
+        // 2. Searches for semantically similar past messages
+        // 3. Includes relevant context in the prompt
+        // 4. Stores new messages as vectors
+
+        return chatClient.prompt()
+            .user(question)
+            .advisors(advisor -> advisor
+                .param("conversationId", conversationId)
+            )
+            .call()
+            .content();
+    }
+
+    public void demonstrateSemanticRetrieval() {
+        String conversationId = "semantic-chat";
+
+        // Earlier conversation about Java
+        chatClient.prompt()
+            .user("I'm learning Java programming")
+            .advisors(a -> a.param("conversationId", conversationId))
+            .call();
+
+        // Much later, ask about programming (semantically related)
+        // VectorStore will retrieve the Java conversation even if it's not recent
+        String response = chatClient.prompt()
+            .user("What programming languages am I interested in?")
+            .advisors(a -> a.param("conversationId", conversationId))
+            .call()
+            .content();
+
+        System.out.println(response); // Will reference Java conversation
+    }
+}
+
+// =============================================================================
+// COMPLETE WORKING EXAMPLE - REST API with Chat Memory
+// =============================================================================
+
+@RestController
+@RequestMapping("/api/chat")
+public class ChatController {
+
+    private final ChatClient chatClient;
+
+    public ChatController(ChatClient.Builder builder, ChatMemory chatMemory) {
+        this.chatClient = builder
+            .defaultAdvisors(new MessageChatMemoryAdvisor(chatMemory))
+            .build();
+    }
+
+    @PostMapping("/{conversationId}")
+    public ResponseEntity<ChatResponse> chat(
+            @PathVariable String conversationId,
+            @RequestBody ChatRequest request) {
+
+        String response = chatClient.prompt()
+            .user(request.message())
+            .advisors(advisor -> advisor.param("conversationId", conversationId))
+            .call()
+            .content();
+
+        return ResponseEntity.ok(new ChatResponse(response));
+    }
+
+    @DeleteMapping("/{conversationId}")
+    public ResponseEntity<Void> clearHistory(@PathVariable String conversationId) {
+        chatMemory.clear(conversationId);
+        return ResponseEntity.noContent().build();
+    }
+
+    record ChatRequest(String message) {}
+    record ChatResponse(String reply) {}
+}
+
+// =============================================================================
+// COMPARISON AND BEST PRACTICES
+// =============================================================================
+
+/*
+ * CHOOSING THE RIGHT MEMORY STRATEGY:
+ *
+ * 1. MessageWindowChatMemory (with InMemoryChatMemoryRepository)
+ *    - Use for: Development, testing, short sessions
+ *    - Pros: Fast, simple, no database needed
+ *    - Cons: Lost on restart, limited to single instance
+ *
+ * 2. MessageWindowChatMemory (with JdbcChatMemoryRepository)
+ *    - Use for: Production apps, long conversations
+ *    - Pros: Persistent, survives restarts
+ *    - Cons: Database dependency, sequential retrieval only
+ *
+ * 3. VectorStoreChatMemoryAdvisor
+ *    - Use for: Long conversations, RAG applications
+ *    - Pros: Semantic search, finds relevant history regardless of recency
+ *    - Cons: Requires vector database, embedding costs
+ *
+ * ADVISOR COMPARISON:
+ *
+ * - MessageChatMemoryAdvisor: Automatic, simple, good default choice
+ * - PromptChatMemoryAdvisor: Use when you need custom formatting
+ * - VectorStoreAdvisor: Use for semantic memory retrieval
+ *
+ * BEST PRACTICES:
+ *
+ * 1. Always use conversationId to separate user sessions
+ * 2. Limit window size to control token usage (10-20 messages typical)
+ * 3. Use JDBC repository in production for persistence
+ * 4. Consider VectorStore for applications with long conversation histories
+ * 5. Implement conversation cleanup/archival for inactive sessions
+ * 6. Monitor token usage - memory increases prompt size significantly
+ */

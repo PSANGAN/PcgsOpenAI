@@ -4,6 +4,17 @@ spring:
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
+  chat:
+    memory:
+      repository:
+       jdbc:
+        initailize-schema: true
+        schema: classpath:/schema/schema-h2db.sql
+  datasource:
+    url: jdbc:h2:file:~/chatmemory;AUTO_SERVER=true
+    driver-class-name: org.h2.Driver
+    username: pcgs
+    password: 12345
 
 logging:
   pattern:

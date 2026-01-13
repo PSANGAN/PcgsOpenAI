@@ -1,20 +1,38 @@
 spring:
   application:
-    name: openai
+    name: pcgs-openai
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
-  chat:
-    memory:
-      repository:
-       jdbc:
-        initailize-schema: true
-        schema: classpath:/schema/schema-h2db.sql
+    vectorstore:
+      qdrant:
+        initialize-schema: true
+        host: localhost
+        port: 6334
+        collection-name: pcgs
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: always
+            schema: classpath:/schema/schema-h2db.sql
+
   datasource:
     url: jdbc:h2:file:~/chatmemory;AUTO_SERVER=true
     driver-class-name: org.h2.Driver
     username: pcgs
     password: 12345
+  h2:
+    console:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+  docker:
+    compose:
+      stop:
+        command: down
 
 logging:
   pattern:
